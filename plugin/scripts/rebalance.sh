@@ -9,12 +9,13 @@
 
 STATUS_FILE="/tmp/rebalance_status.json"
 LOCK_FILE="/tmp/rebalance.lock"
+LOG_FILE="/var/log/rebalance.log"
 LOG_MAX=500
 
 TOLERANCE=2
 DRY_RUN=false
 USE_CACHE=false
-CACHE_BUFFER_KB=102400   # 100 GB default staging budget
+CACHE_BUFFER_KB=104857600   # 100 GB default staging budget (KB); overridden by --cache-buffer
 STAGE_DIR=""             # set via --stage-dir; auto-detected if empty
 MIN_FILE_KB=0            # 0 = no filter; >0 skips files smaller than N KB
 
@@ -126,6 +127,7 @@ log() {
     LOG_MSGS+=("${ts}|${msg}")
     (( ${#LOG_MSGS[@]} > LOG_MAX )) && LOG_MSGS=("${LOG_MSGS[@]:50}")
     echo "[$ts] $msg" >&2
+    printf '%s [PID %d] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$msg" >> "$LOG_FILE" 2>/dev/null
 }
 
 # JSON-encode a string (outputs with surrounding double-quotes)
@@ -497,12 +499,39 @@ execute_plan_cached() {
                     P_STATUS[$i]="skipped"; (( FILES_SKIPPED++ )); continue
                 fi
                 P_STATUS[$i]="moving"
-                if rsync -aX --remove-source-files "$src" "$dst_dir/" 2>/dev/null; then
-                    P_STATUS[$i]="done"; (( FILES_DONE++ )); (( BYTES_DONE += size_kb ))
+
+                local base_done=$BYTES_DONE rc="" err_line=""
+                while IFS= read -r line; do
+                    if [[ "$line" == __RC:* ]]; then
+                        rc="${line#__RC:}"
+                    elif [[ "$line" =~ ([0-9]{1,3})% ]]; then
+                        local fpct="${BASH_REMATCH[1]}"
+                        (( fpct > 100 )) && fpct=100
+                        BYTES_DONE=$(( base_done + size_kb * fpct / 100 ))
+                        local now; now=$(date +%s)
+                        if (( now - last_write >= 3 )); then
+                            _update_rate "$now" rate_t0 rate_b0
+                            last_write=$now; write_status
+                        fi
+                    else
+                        err_line="$line"
+                    fi
+                done < <(rsync -aX --remove-source-files --info=progress2 "$src" "$dst_dir/" 2>&1; printf '__RC:%d\n' "$?")
+
+                if [[ "$rc" == "0" ]]; then
+                    BYTES_DONE=$(( base_done + size_kb ))
+                    P_STATUS[$i]="done"; (( FILES_DONE++ ))
                     find "$(dirname "$src")" -mindepth 1 -type d -empty -delete 2>/dev/null
                 else
-                    log "ERROR: direct fallback failed — $(basename "$src")"
+                    BYTES_DONE=$base_done
+                    log "ERROR: direct fallback failed — $(basename "$src")${err_line:+ ($err_line)}"
                     P_STATUS[$i]="error"; (( FILES_SKIPPED++ ))
+                fi
+
+                local now; now=$(date +%s)
+                if (( now - last_write >= 3 )); then
+                    _update_rate "$now" rate_t0 rate_b0
+                    last_write=$now; write_status
                 fi
                 continue
             fi
@@ -552,22 +581,44 @@ execute_plan_cached() {
         P_STATUS[$i]="moving"
         mkdir -p "$dst_dir"
 
-        # rsync from cache to dest; then remove source and staged copy
-        if rsync -aX "$staged" "$dst_dir/" 2>/dev/null; then
+        # rsync from cache to dest; then remove source and staged copy.
+        # Streams --info=progress2 so BYTES_DONE (and the UI's % bar) advances
+        # mid-file instead of only jumping once per completed file.
+        local base_done=$BYTES_DONE rc="" err_line=""
+        while IFS= read -r line; do
+            if [[ "$line" == __RC:* ]]; then
+                rc="${line#__RC:}"
+            elif [[ "$line" =~ ([0-9]{1,3})% ]]; then
+                local fpct="${BASH_REMATCH[1]}"
+                (( fpct > 100 )) && fpct=100
+                BYTES_DONE=$(( base_done + size_kb * fpct / 100 ))
+                local now; now=$(date +%s)
+                if (( now - last_write >= 3 )); then
+                    _update_rate "$now" rate_t0 rate_b0
+                    last_write=$now; write_status
+                fi
+            else
+                err_line="$line"
+            fi
+        done < <(rsync -aX --info=progress2 "$staged" "$dst_dir/" 2>&1; printf '__RC:%d\n' "$?")
+
+        if [[ "$rc" == "0" ]]; then
             rm -f "$src"                # remove original (file safely on dest)
             rm -f "$staged"             # remove staged copy
             find "$staged_dir"    -mindepth 1 -type d -empty -delete 2>/dev/null
             find "$(dirname "$src")" -mindepth 1 -type d -empty -delete 2>/dev/null
-            P_STATUS[$i]="done"; (( FILES_DONE++ )); (( BYTES_DONE += size_kb ))
+            BYTES_DONE=$(( base_done + size_kb ))
+            P_STATUS[$i]="done"; (( FILES_DONE++ ))
         else
-            log "ERROR: move from cache failed — $(basename "$src")"
+            BYTES_DONE=$base_done
+            log "ERROR: move from cache failed — $(basename "$src")${err_line:+ ($err_line)}"
             P_STATUS[$i]="error"; (( FILES_SKIPPED++ ))
             rm -f "$staged"; find "$staged_dir" -mindepth 1 -type d -empty -delete 2>/dev/null
         fi
 
-        # ── Rate / ETA update every 5 s ────────────────────────────────────
+        # ── Rate / ETA update ────────────────────────────────────────────────
         local now; now=$(date +%s)
-        if (( now - last_write >= 5 )); then
+        if (( now - last_write >= 3 )); then
             _update_rate "$now" rate_t0 rate_b0
             last_write=$now; write_status
         fi
@@ -623,28 +674,44 @@ execute_plan() {
             P_STATUS[$i]="skipped"; (( FILES_SKIPPED++ )); continue
         fi
 
-        # --- Execute ---
+        # --- Execute (stream rsync's progress so BYTES_DONE advances mid-file) ---
         log "Moving ($(fmt_kb $size_kb)): $(basename "$src")  →  $(basename "$dst_dir" | sed 's|^/mnt/||')/"
         P_STATUS[$i]="moving"
         mkdir -p "$dst_dir"
 
-        if rsync -aX --remove-source-files "$src" "${dst_dir}/" 2>/dev/null; then
+        local base_done=$BYTES_DONE rc="" err_line=""
+        while IFS= read -r line; do
+            if [[ "$line" == __RC:* ]]; then
+                rc="${line#__RC:}"
+            elif [[ "$line" =~ ([0-9]{1,3})% ]]; then
+                local fpct="${BASH_REMATCH[1]}"
+                (( fpct > 100 )) && fpct=100
+                BYTES_DONE=$(( base_done + size_kb * fpct / 100 ))
+                local now; now=$(date +%s)
+                if (( now - last_write >= 3 )); then
+                    _update_rate "$now" rate_t0 rate_b0
+                    last_write=$now; write_status
+                fi
+            else
+                err_line="$line"
+            fi
+        done < <(rsync -aX --remove-source-files --info=progress2 "$src" "${dst_dir}/" 2>&1; printf '__RC:%d\n' "$?")
+
+        if [[ "$rc" == "0" ]]; then
+            BYTES_DONE=$(( base_done + size_kb ))
             P_STATUS[$i]="done"
             (( FILES_DONE++ ))
-            (( BYTES_DONE += size_kb ))
-            # Prune empty directories left behind (but not the share root itself)
-            local src_share_root
-            src_share_root=$(echo "$src" | cut -d/ -f1-4)   # /mnt/diskN/share
             find "$(dirname "$src")" -mindepth 1 -type d -empty -delete 2>/dev/null
         else
-            log "ERROR: rsync failed — $(basename "$src")"
+            BYTES_DONE=$base_done
+            log "ERROR: rsync failed — $(basename "$src")${err_line:+ ($err_line)}"
             P_STATUS[$i]="error"
             (( FILES_SKIPPED++ ))
         fi
 
-        # --- Rate / ETA (update every 5 seconds) ---
+        # --- Rate / ETA ---
         local now; now=$(date +%s)
-        if (( now - last_write >= 5 )); then
+        if (( now - last_write >= 3 )); then
             _update_rate "$now" rate_t0 rate_b0
             last_write=$now; write_status
         fi
@@ -673,10 +740,15 @@ refresh_disk_stats() {
 # Main
 ##############################################################################
 
+# Rotate the persistent log if it has grown large (keep the most recent lines)
+if [[ -f "$LOG_FILE" ]] && (( $(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0) > 5242880 )); then
+    tail -n 2000 "$LOG_FILE" > "${LOG_FILE}.tmp" 2>/dev/null && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+fi
+
 # Write status immediately so the PHP poller sees 'starting' right away
 write_status
 
-log "ReBalance started — tolerance: ±${TOLERANCE}%  dry_run: ${DRY_RUN}  use_cache: ${USE_CACHE}"
+log "ReBalance started — tolerance: ±${TOLERANCE}%  dry_run: ${DRY_RUN}  use_cache: ${USE_CACHE}  full log: ${LOG_FILE}"
 $USE_CACHE && log "Cache staging buffer: $(fmt_kb $CACHE_BUFFER_KB)  staging dir: $STAGE_DIR"
 discover_disks
 

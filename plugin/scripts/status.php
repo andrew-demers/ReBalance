@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tolerance     = max(1, min(20, (int)($_POST['tolerance']      ?? 2)));
     $dry_run       = !empty($_POST['dry_run']);
     $use_cache     = !empty($_POST['use_cache']);
-    $cache_buffer  = max(10240, min(10485760, (int)($_POST['cache_buffer_kb'] ?? 102400)));
+    $cache_buffer  = max(10485760, min(2097152000, (int)($_POST['cache_buffer_kb'] ?? 104857600)));
     $stage_dir     = trim($_POST['stage_dir']    ?? '');
     $min_file_kb   = max(0, (int)($_POST['min_file_kb'] ?? 0));
 

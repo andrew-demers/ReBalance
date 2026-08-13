@@ -395,7 +395,11 @@ $csrf    = $var['csrf_token'] ?? '';
 
 <!-- ── Log ───────────────────────────────────────────────────────────────── -->
 <div class="rb-section" id="log-section">
-  <h3><i class="fa fa-terminal"></i> Log</h3>
+  <h3><i class="fa fa-terminal"></i> Log
+    <span style="font-size:11px;font-weight:normal;color:#888;margin-left:6px">
+      (full history persists across runs at /var/log/rebalance.log)
+    </span>
+  </h3>
   <div id="log-box"></div>
 </div>
 
@@ -760,7 +764,7 @@ window.startRebalance = function(dryRun) {
     if (dryRun) body.set('dry_run', '1');
     if (useCache) {
         body.set('use_cache', '1');
-        body.set('cache_buffer_kb', bufGB * 1024);
+        body.set('cache_buffer_kb', bufGB * 1024 * 1024);
         if (stageDir) body.set('stage_dir', stageDir);
     }
 
