@@ -285,6 +285,26 @@ incrementally from the per-file percentage and calling `write_status` every
 ~3 seconds during the transfer — not just at file boundaries. The fallback
 branch now always writes status before its `continue`.
 
+### 14. Bug #13's fix didn't actually stream (carriage returns vs newlines)
+After shipping bug #13's fix, the progress bar was still observed frozen at
+0% during real transfers. Root cause: `rsync --info=progress2` redraws its
+progress line using carriage returns (`\r`) between updates and only emits a
+real newline (`\n`) once a file's transfer completes — confirmed by piping
+real rsync output through `od -c`. Bash's `while IFS= read -r line` only
+splits on `\n`, so the entire multi-minute stream of `\r`-separated updates
+for one file was buffered into a single giant "line" that wasn't handed to
+the loop body until the file finished. The percentage regex then matched
+the *first* percentage found in that giant buffered string (an early, near-0
+value from the start of the transfer), not the current one — so `BYTES_DONE`
+stayed stuck near its starting value for the whole file, then jumped only
+at completion. Verified by simulating the exact loop against real rsync:
+only 1 percentage match was read for a 200 MB transfer.
+Fix: pipe rsync's combined stdout/stderr through `tr '\r' '\n'` before the
+`while read` loop, in all three streaming call sites (`execute_plan`'s
+direct move, `execute_plan_cached`'s cache→dest move, and its cache-full
+fallback). Re-verified with the same simulation: ~100 incremental updates
+were read for the same 200 MB transfer instead of 1.
+
 ---
 
 ## Status JSON fields (written by rebalance.sh)

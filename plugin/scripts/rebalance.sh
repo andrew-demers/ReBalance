@@ -516,7 +516,9 @@ execute_plan_cached() {
                     else
                         err_line="$line"
                     fi
-                done < <(rsync -aX --remove-source-files --info=progress2 "$src" "$dst_dir/" 2>&1; printf '__RC:%d\n' "$?")
+                done < <(
+                    { rsync -aX --remove-source-files --info=progress2 "$src" "$dst_dir/" 2>&1; printf '__RC:%d\n' "$?"; } | tr '\r' '\n'
+                )
 
                 if [[ "$rc" == "0" ]]; then
                     BYTES_DONE=$(( base_done + size_kb ))
@@ -600,7 +602,9 @@ execute_plan_cached() {
             else
                 err_line="$line"
             fi
-        done < <(rsync -aX --info=progress2 "$staged" "$dst_dir/" 2>&1; printf '__RC:%d\n' "$?")
+        done < <(
+            { rsync -aX --info=progress2 "$staged" "$dst_dir/" 2>&1; printf '__RC:%d\n' "$?"; } | tr '\r' '\n'
+        )
 
         if [[ "$rc" == "0" ]]; then
             rm -f "$src"                # remove original (file safely on dest)
@@ -695,7 +699,9 @@ execute_plan() {
             else
                 err_line="$line"
             fi
-        done < <(rsync -aX --remove-source-files --info=progress2 "$src" "${dst_dir}/" 2>&1; printf '__RC:%d\n' "$?")
+        done < <(
+            { rsync -aX --remove-source-files --info=progress2 "$src" "${dst_dir}/" 2>&1; printf '__RC:%d\n' "$?"; } | tr '\r' '\n'
+        )
 
         if [[ "$rc" == "0" ]]; then
             BYTES_DONE=$(( base_done + size_kb ))

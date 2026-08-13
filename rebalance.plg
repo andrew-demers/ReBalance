@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name       "rebalance">
   <!ENTITY author     "Esteban4u">
-  <!ENTITY version    "2026.08.12">
+  <!ENTITY version    "2026.08.13">
   <!ENTITY pluginURL  "https://raw.githubusercontent.com/andrew-demers/ReBalance/main/rebalance.plg">
   <!ENTITY pluginDir  "/usr/local/emhttp/plugins/rebalance">
 ]>
@@ -31,6 +31,11 @@
 >
 
 <CHANGES>
+##2026.08.13
+- Actually fixed the progress bar freezing mid-transfer — rsync's --info=progress2 emits updates
+  via carriage returns, not newlines, so the previous fix's line-buffered read never saw them
+  until a file finished. Now streams through tr to split on \r as well.
+
 ##2026.08.12
 - Actions now logged to a persistent /var/log/rebalance.log, not just the transient in-page log
 - Fixed cache staging budget being effectively ~100MB regardless of configured value (GB→KB unit bug)
@@ -59,7 +64,7 @@
 
 <!-- ── Step 1: download tarball from GitHub release ────────────────────────── -->
 <FILE Name="/boot/config/plugins/rebalance/rebalance.tar.gz">
-  <URL>https://github.com/andrew-demers/ReBalance/releases/download/2026.08.12/rebalance.tar.gz</URL>
+  <URL>https://github.com/andrew-demers/ReBalance/releases/download/2026.08.13/rebalance.tar.gz</URL>
   <MD5>59e1617dc508f8252c984d7e17ea717b</MD5>
 </FILE>
 
