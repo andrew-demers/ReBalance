@@ -1,0 +1,32 @@
+name: Build plugin package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'plugin/**'
+      - 'package.sh'
+      - 'rebalance.plg'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Build package
+        run: bash package.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebalance-plugin
+          path: |
+            rebalance.tar.gz
+            rebalance.plg
+          if-no-files-found: error
