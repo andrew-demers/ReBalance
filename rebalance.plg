@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name       "rebalance">
   <!ENTITY author     "Esteban4u">
-  <!ENTITY version    "2026.06.20">
-  <!ENTITY pluginURL  "https://raw.githubusercontent.com/Esteban4u/ReBalance/main/rebalance.plg">
+  <!ENTITY version    "2026.08.12">
+  <!ENTITY pluginURL  "https://raw.githubusercontent.com/andrew-demers/ReBalance/main/rebalance.plg">
   <!ENTITY pluginDir  "/usr/local/emhttp/plugins/rebalance">
 ]>
 
@@ -14,7 +14,7 @@
 
   Installation:
     In the Unraid web UI go to Plugins → Install Plugin and paste:
-    https://raw.githubusercontent.com/Esteban4u/ReBalance/main/rebalance.plg
+    https://raw.githubusercontent.com/andrew-demers/ReBalance/main/rebalance.plg
 
   Support:
     https://forums.unraid.net/topic/198334-rebalance-array-disk-usage-balancer/
@@ -31,6 +31,11 @@
 >
 
 <CHANGES>
+##2026.08.12
+- Actions now logged to a persistent /var/log/rebalance.log, not just the transient in-page log
+- Fixed cache staging budget being effectively ~100MB regardless of configured value (GB→KB unit bug)
+- Progress bar no longer freezes mid-run — updates continuously during large file transfers instead of only between files
+
 ##2026.06.20
 - Fixed missing plugin icon on Plugins tab (SVG → PNG) — restores clickable icon to launch UI
 
@@ -54,8 +59,8 @@
 
 <!-- ── Step 1: download tarball from GitHub release ────────────────────────── -->
 <FILE Name="/boot/config/plugins/rebalance/rebalance.tar.gz">
-  <URL>https://github.com/Esteban4u/ReBalance/releases/download/2026.06.20/rebalance.tar.gz</URL>
-  <MD5>84248869a331ccf515f05e13f1ab2649</MD5>
+  <URL>https://github.com/andrew-demers/ReBalance/releases/download/2026.08.12/rebalance.tar.gz</URL>
+  <MD5>59e1617dc508f8252c984d7e17ea717b</MD5>
 </FILE>
 
 <!-- ── Step 2: unpack and configure ───────────────────────────────────────── -->
