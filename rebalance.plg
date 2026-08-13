@@ -65,7 +65,7 @@
 <!-- ── Step 1: download tarball from GitHub release ────────────────────────── -->
 <FILE Name="/boot/config/plugins/rebalance/rebalance.tar.gz">
   <URL>https://github.com/andrew-demers/ReBalance/releases/download/2026.08.13/rebalance.tar.gz</URL>
-  <MD5>59e1617dc508f8252c984d7e17ea717b</MD5>
+  <MD5>a060f0498b4f43bbef07616dca50965d</MD5>
 </FILE>
 
 <!-- ── Step 2: unpack and configure ───────────────────────────────────────── -->
